@@ -1,0 +1,375 @@
+################################################################
+#Title: Temperature Data -- Distributions + Visualization
+#Purpose: Calculate presented metrics of habitat temperature for Ch 2 MS
+#Created by: L Pandori
+#Created: 12/10/18
+#Last edited: 12/10/18
+################################################################
+
+##### Data prep and package upload #####
+#Clear workspace
+rm(lists=ls())
+
+#load libraries
+library(MASS)     # binmial regression
+library(readr)    # read csv files
+library(reshape)  # delimited column separation 
+library(nlme)     # mixed effects model 
+library(plyr)     # re-value categorical data, summarize
+library(lattice)  # levelplot for heatmap-esque plots
+library(RColorBrewer) # make color palettes
+library(tidyr)    # dataset reshaping
+
+##### Temp. data import and formatting #####
+
+# Load in temp. data (from Station_Temp_Fill-in_Code_etc.) @ 2 sites
+
+# CCSP
+# lab computer
+ccsp.temp <- read_csv("C:/Users/McQuinn/Box Sync/OCEANS_Stats/OCANS_Stats/OCEANS_TempData_CCSP_7.24.18.csv")
+
+# laptop
+#ccsp.temp <- read_csv("C:/Users/Lauren Pandori/Box Sync/OCEANS_Stats/OCANS_Stats/OCEANS_TempData_CCSP_7.24.18.csv")
+# QC CCSP data
+head(ccsp.temp)
+# weird column added...remove so lines up with LCDM data
+ccsp.temp$X1<-NULL
+
+# LCDM 
+# lab computer
+lcdm.temp <- read_csv("C:/Users/McQuinn/Box Sync/OCEANS_Stats/OCANS_Stats/OCEANS_TempData_LCDM_7.24.18.csv")
+
+# laptop
+#lcdm.temp <- read_csv("C:/Users/Lauren Pandori/Box Sync/OCEANS_Stats/OCANS_Stats/OCEANS_TempData_LCDM_7.24.18.csv")
+# QC LCDM data
+head(lcdm.temp)
+lcdm.temp$X1<-NULL
+head(ccsp.temp)
+head(lcdm.temp)
+
+# add site identifier column
+ccsp.temp$site<-'ccsp'
+lcdm.temp$site<-'lcdm'
+
+# remove Date column from 'ccsp'
+ccsp.temp$Date<-NULL
+
+# make column names consistent
+colnames(lcdm.temp)<-colnames(ccsp.temp)
+
+# merge datsets
+temp<-rbind(ccsp.temp, lcdm.temp)
+# get rid of weird 1st column
+temp$X1<-NULL
+# remove decimal from number_date (to create day category)
+temp$number_day<-as.integer(temp$number_date)
+# make temp columns numeric
+temp$temp<-as.numeric(paste(temp$temp))
+temp$fill<-as.numeric(paste(temp$fill))
+temp$movingavg<-as.numeric(paste(temp$movingavg))
+
+# calculate daily max a few ways
+head(temp)
+dailytemp<-ddply(temp, c('site', 'season', 'place', 'number_day'), summarize, 
+                 movavg.max = max(movingavg, na.rm = TRUE))
+
+# Shows daily 6-hour average temps for each day/site/season/place
+View(avgtemp)
+
+# summarize across days (mean for each site/season/place)
+
+avgtemp<-ddply(dailytemp, c('site', 'place'),
+               summarize,
+               avg.movmax = mean(movavg.max),
+               ninety.movmax = quantile(movavg.max, c(.9), na.rm = TRUE),
+               eighty.movmax = quantile(movavg.max, c(.75), na.rm = TRUE))
+
+##### See if temp. distributions differ (X2 test) #####
+  # Kolmogorov-Smirnov tests to determine if come from same distribution
+  # https://stat.ethz.ch/R-manual/R-devel/library/stats/html/ks.test.html
+  
+    # Ho = all come from same distribution 
+    # Ha = at least one of the null hypotheses is false
+
+  # Create list of things we want to compare (will loop test)
+    # Add column to daily temp dataframe with site*place information (don't need season here)
+    dailytemp$name<-paste(dailytemp$site, dailytemp$place)
+    unique(dailytemp$name)
+    
+    # create list of combinations of names
+    dailytemp$name<-factor(dailytemp$name, ordered = TRUE, 
+                    levels = c(
+                    'ccsp lsol', 'ccsp lagg', 'ccsp lsh', 'ccsp ltp',
+                    'ccsp msol', 'ccsp magg', 'ccsp msh', 'ccsp mtp',
+                    'ccsp hsol', 'ccsp hagg', 'ccsp hsh', 'ccsp htp',
+                    'lcdm lsol', 'lcdm lagg', 'lcdm lsh', 'lcdm ltp',
+                    'lcdm msol', 'lcdm magg', 'lcdm msh', 'lcdm mtp', 
+                    'lcdm hsol', 'lcdm hagg', 'lcdm hsh', 'lcdm htp'))
+    names<-unique(dailytemp$name)
+    names<-sort(names)
+    names<-revalue(names,
+                    c('ccsp lsol' = 'CC low solitary', 
+                      'ccsp lagg' = 'CC low aggregate',
+                      'ccsp lsh' = 'CC low shelter',
+                      'ccsp ltp' = 'CC low tide pool',
+                      'ccsp msol' = 'CC mid solitary',
+                      'ccsp magg' = 'CC mid aggregate',
+                      'ccsp msh' = 'CC mid shelter',
+                      'ccsp mtp' = 'CC mid tide pool',
+                      'ccsp hsol' = 'CC high solitary',
+                      'ccsp hagg' = 'CC high aggregate',
+                      'ccsp hsh' = 'CC high shelter',
+                      'ccsp htp' = 'CC high tide pool',
+                      'lcdm lsol' = 'LC low solitary',
+                      'lcdm lagg' = 'LC low aggregate',
+                      'lcdm lsh' = 'LC low shelter',
+                      'lcdm ltp' = 'LC low tide pool',
+                      'lcdm msol' = 'LC mid solitary',
+                      'lcdm magg' = 'LC mid aggregate',
+                      'lcdm msh' = 'LC mid shelter',
+                      'lcdm mtp' = 'LC mid tide pool',
+                      'lcdm hsol' = 'LC high solitary',
+                      'lcdm hagg' = 'LC high aggregate',
+                      'lcdm hsh' = 'LC high shelter',
+                      'lcdm htp' = 'LC high tide pool'))
+    
+    dailytemp$name<-revalue(dailytemp$name,
+                   c('ccsp lsol' = 'CC low solitary', 
+                     'ccsp lagg' = 'CC low aggregate',
+                     'ccsp lsh' = 'CC low shelter',
+                     'ccsp ltp' = 'CC low tide pool',
+                     'ccsp msol' = 'CC mid solitary',
+                     'ccsp magg' = 'CC mid aggregate',
+                     'ccsp msh' = 'CC mid shelter',
+                     'ccsp mtp' = 'CC mid tide pool',
+                     'ccsp hsol' = 'CC high solitary',
+                     'ccsp hagg' = 'CC high aggregate',
+                     'ccsp hsh' = 'CC high shelter',
+                     'ccsp htp' = 'CC high tide pool',
+                     'lcdm lsol' = 'LC low solitary',
+                     'lcdm lagg' = 'LC low aggregate',
+                     'lcdm lsh' = 'LC low shelter',
+                     'lcdm ltp' = 'LC low tide pool',
+                     'lcdm msol' = 'LC mid solitary',
+                     'lcdm magg' = 'LC mid aggregate',
+                     'lcdm msh' = 'LC mid shelter',
+                     'lcdm mtp' = 'LC mid tide pool',
+                     'lcdm hsol' = 'LC high solitary',
+                     'lcdm hagg' = 'LC high aggregate',
+                     'lcdm hsh' = 'LC high shelter',
+                     'lcdm htp' = 'LC high tide pool'))
+    
+    
+    combo<-combn(names,2, simplify = FALSE)
+    combo<-as.data.frame(combo)
+    
+      # convert from wide to long format (transpose)
+    combo<-t(combo)
+
+      # re-label first column so that it's numbers, and add number column
+    row.names(combo)<-c(1:276)
+      # re-label rows in combo 4 (set.one, set.two)
+    colnames(combo)<-c('set1', 'set2')
+    head(combo)
+    
+    combo<-as.data.frame(combo)
+    combo$set1<-as.character(combo$set1)
+    combo$set2<-as.character(combo$set2)
+
+  # Create output data frame
+    all.ks.results<-matrix(nrow=24,ncol=24)
+    all.ks.results<-as.data.frame(ks.results)
+    colnames(all.ks.results)<-names
+    row.names(all.ks.results)<-names
+    
+  # duplicate for 75th and 90th percentile results
+    seventy.ks.results<-all.ks.results
+    ninety.ks.results<-all.ks.results
+
+  # duplicate all for p-value only table (levelplot)
+    all.ks.results2<-all.ks.results
+    seventy.ks.results2<-all.ks.results
+    ninety.ks.results2<-all.ks.results
+    
+  # make table for 81st, 90th and 99th percentiles (for bar? plot)
+    length(names)
+    percentiles<-matrix(nrow = 24 , ncol = 4)
+    percentiles<-as.data.frame(percentiles)
+    row.names(percentiles)<-names
+    # re-label rows in combo 4 (set.one, set.two)
+    colnames(percentiles)<-c('eightyone', 'ninety', 'ninetynine', 'seventyfive')
+    percentiles$names<-names
+    
+    
+  # Loop for Kolmogorov-Smirnov tests (all combinations -- including separate sites)
+    for (i in 1:276)
+    {
+    # subset data 
+    dist1<-combo$set1[i]
+    dist2<-combo$set2[i]
+
+    # subset relevant data
+    all.dist1<-subset(dailytemp, dailytemp$name == dist1)
+    all.dist2<-subset(dailytemp, dailytemp$name == dist2)
+    
+    # if/else statement -- proceed only if temp values available
+    if(all(all.dist1$movavg.max == -Inf)|all(all.dist2$movavg.max == -Inf))
+      # if either dist 1 or dist 2 is all NA's, fill in results with ND
+    {
+      # results in table
+      all.ks.results[dist1,dist2]<-'ND'
+      seventy.ks.results[dist1,dist2]<-'ND'
+      ninety.ks.results[dist1,dist2]<-'ND'
+      
+      all.ks.results2[dist1,dist2]<-'ND'
+      seventy.ks.results2[dist1,dist2]<-'ND'
+      ninety.ks.results2[dist1,dist2]<-'ND'
+    }
+    
+    else{
+      # conduct test
+    all.test<-ks.test(all.dist1$movavg.max, all.dist2$movavg.max)
+      
+      # calculate 75th percentile data
+        # dist 1
+      seven.dist1<-subset(all.dist1, all.dist1$movavg.max > quantile(all.dist1$movavg.max, c(.75), na.rm = TRUE))
+        # dist 2
+      seven.dist2<-subset(all.dist2, all.dist2$movavg.max > quantile(all.dist2$movavg.max, c(.75), na.rm = TRUE))
+
+      # calculate 90th percentile data
+        # dist 1
+      nine.dist1<-subset(all.dist1, all.dist1$movavg.max > quantile(all.dist1$movavg.max, c(.9), na.rm = TRUE))
+        # dist 2
+      nine.dist2<-subset(all.dist2, all.dist2$movavg.max > quantile(all.dist2$movavg.max, c(.9), na.rm = TRUE))
+    
+      # 70th and 90th percentile ks test
+      seven.test<-ks.test(seven.dist1$movavg.max, seven.dist2$movavg.max)
+      nine.test<-ks.test(nine.dist1$movavg.max, nine.dist2$movavg.max)
+
+      # results in table 
+      all.ks.results[dist1,dist2]<-paste(all.test$statistic, ',', all.test$p.value)
+      seventy.ks.results[dist1,dist2]<-paste(seven.test$statistic, ',', seven.test$p.value)
+      ninety.ks.results[dist1,dist2]<-paste(nine.test$statistic, ',', nine.test$p.value)
+      
+      all.ks.results2[dist1,dist2]<- all.test$p.value
+      seventy.ks.results2[dist1,dist2]<- seven.test$p.value
+      ninety.ks.results2[dist1,dist2]<- nine.test$p.value
+      
+      # put quantile results in percentiles data frame
+          # unname isolates numerical value of result
+      percentiles[dist1,1]<- unname(quantile(all.dist1$movavg.max, c(.81), na.rm = TRUE))
+      percentiles[dist1,2]<- unname(quantile(all.dist1$movavg.max, c(.90), na.rm = TRUE))
+      percentiles[dist1,3]<- unname(quantile(all.dist1$movavg.max, c(.99), na.rm = TRUE))
+      percentiles[dist1,4]<- unname(quantile(all.dist1$movavg.max, c(.75), na.rm = TRUE))
+    }}
+    
+    # since LC high tidepool isn't ever included as dist 1 in the loop, use below to fill in the space
+    all.dist1<-subset(dailytemp, dailytemp$name == 'LC high tide pool')
+    
+    percentiles['LC high tide pool',1]<- unname(quantile(all.dist1$movavg.max, c(.81), na.rm = TRUE))
+    percentiles['LC high tide pool',2]<- unname(quantile(all.dist1$movavg.max, c(.90), na.rm = TRUE))
+    percentiles['LC high tide pool',3]<- unname(quantile(all.dist1$movavg.max, c(.99), na.rm = TRUE))
+    percentiles['LC high tide pool',4]<- unname(quantile(all.dist1$movavg.max, c(.75), na.rm = TRUE))
+    
+# use levelplot to show results of tests (all, seventy + ninety)
+    # create custom color scheme
+    my.at <- c(0,0.018, 0.05) 
+    my.col.regions <- c("gray48", 'gray30') 
+    
+levelplot(all.ks.results2,
+          at = my.at,
+          col.regions = my.col.regions,
+          tick = FALSE,
+          xlab = 'Site, tide height and habitat',
+          ylab = 'Site, tide height and habitat',
+          # rotate x-axis 90 degrees (vertical)
+          scales= list(x=list(rot=90)),
+          cexRow=1.2, cexCol=1.2 
+          # no tick marks
+          )
+
+levelplot(ninety.ks.results2,
+          at = my.at,
+          col.regions = my.col.regions,
+          tick = FALSE,
+          xlab = 'Site, tide height and habitat',
+          ylab = 'Site, tide height and habitat',
+          # rotate x-axis 90 degrees (vertical)
+          scales= list(x=list(rot=90)),
+          cexRow=1.2, cexCol=1.2 
+          # no tick marks
+)
+
+##### Modified bar(?) plot for temp. data #####
+  # lowest part of bar will be 89th percentile
+  # highest part of bar will be 99th percentile
+  # point will be at 90th percentile 
+
+# prepare dataset: delimit name columns by spaces
+percentiles2<-separate(percentiles, col = names, into = c('site', 'tideht', 'habitat', 'habiatat2'), sep = ' ')
+
+percentiles$site<-percentiles2$site
+percentiles$tideht<-percentiles2$tideht
+percentiles$habitat<-percentiles2$habitat
+  
+  # 6 panels, one per tide height (3) per site (2)
+
+par(mfrow=c(3,2))
+
+  # make lists over which to loop plot
+    # tide height list
+    percentiles$tideht<-factor(percentiles$tideht, ordered = TRUE, c('low', 'mid', 'high'))
+    tideht.list<-unique(percentiles$tideht)
+    
+    percentiles$site<-factor(percentiles$site, ordered = TRUE, c('CC', 'LC'))
+    site.list<-unique(percentiles$site)
+    
+    min(percentiles$eightyone, na.rm = TRUE)
+    max(percentiles$ninetynine, na.rm = TRUE)
+
+    par(mfrow=c(3,2))
+    # nested for loops (i for sites, j for tidehts)
+    for (j in 3:1){
+      for (i in 1:2){
+        
+  # subset relevant data to plot (one plot per tide ht x site combo.)
+  site1<-site.list[i]
+  tideht2<-tideht.list[j]
+  
+  data1<-subset(percentiles, percentiles$site == site1 & percentiles$tideht == tideht2)
+  
+  par(pty = "s")
+  # create empty plot with consistent dimensions + labels
+  plot(0,type='n', #make empty plot
+       xlim=c(0,3.5),
+       ylim=c(15, 35), 
+       xlab='Habitat', 
+       ylab = expression(paste("Temperature (",degree,"C)")),
+       main = paste(site1, tideht2),
+       pch=19, yaxt='n', axes=F, cex.lab=2)
+  # dashed horizontal gray line @ average 90th percentile
+  abline(h=mean(percentiles$ninety, na.rm = TRUE), lty = 2, lwd = 1.5, col = 'gray48') # make dotted line @ x = 0
+  
+  # add in "arrows" from 81st - 99th percentiles
+  arrows(c(0.25, 1.25, 2.25, 3.25),data1$eightyone, c(0.25, 1.25, 2.25, 3.25), data1$ninetynine, angle = 90, code = 3, length = 0.1, lty = 1, lwd=6, col='grey55') 
+  
+  points(c(0.25, 1.25, 2.25, 3.25), data1$ninety, pch = 16, cex = 2)
+  
+  # axis(1, at=c(0.25,1.25,2.25, 3.25), labels= c('Solitary', 'Aggregate', 'Shelter', 'Tide pool'), cex.axis=1.8, las = 2, tick = FALSE)
+  
+  axis(2, at=c(15,20,25,30,35), labels = c('15', '20', '25', '30', '35'),cex.axis=1.8, tick = FALSE)
+  box() # adds box around figures
+
+}}
+
+  # export results to csv file
+    write.csv(all.ks.results, 'alldata_ks_results.csv')
+    write.csv(seventy.ks.results, '75th_percentile_ks_results.csv')
+    write.csv(ninety.ks.results, '90th_percentile_ks_results.csv')
+    
+##### Plot results of KW tests as heatmap ##### -- in Excel :)
+    
+
+# Summarize daily max temps by 90th percentile thresholds to plot (in excel)
+    write.csv(avgtemp, 'temp_thresholds_all.csv')
+    
